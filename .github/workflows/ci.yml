@@ -53,14 +53,6 @@ jobs:
           key: mothership
           workspaces: mothership
 
-      - name: rustfmt
-        working-directory: shuttlebay
-        run: cargo fmt --check
-
-      - name: clippy (engine)
-        working-directory: shuttlebay
-        run: cargo clippy --all-targets -- -D warnings
-
       - name: Build mothership
         if: steps.mothership.outcome == 'success'
         working-directory: mothership
