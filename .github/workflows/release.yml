@@ -38,9 +38,11 @@ jobs:
       - name: Install gems
         working-directory: shuttlebay
         run: bundle install --jobs 4
+      - name: Update the stable Rust the build container mounts (its image ships an older rustc)
+        run: rustup update stable --no-self-update
       - name: Cross-compile
         working-directory: shuttlebay
-        run: bundle exec rb-sys-dock --platform ${{ matrix.platform }} --ruby-versions 4.0 --build
+        run: bundle exec rb-sys-dock --platform ${{ matrix.platform }} --ruby-versions 4.0 --mount-toolchains --build
       - uses: actions/upload-artifact@v7
         with:
           name: gem-${{ matrix.platform }}

@@ -29,7 +29,7 @@ namespace :platforms do
   desc 'Build every platform gem with rb-sys-dock (Docker)'
   task :build do
     NATIVE_PLATFORMS.each do |platform|
-      sh 'bundle', 'exec', 'rb-sys-dock', '--platform', platform, '--ruby-versions', '4.0', '--build'
+      sh 'bundle', 'exec', 'rb-sys-dock', '--platform', platform, '--ruby-versions', '4.0', '--mount-toolchains', '--build'
     end
   end
 end
