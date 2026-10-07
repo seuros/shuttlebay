@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/seuros/shuttlebay/compare/v0.1.3...v0.1.4) (2026-10-07)
+
+
+### Bug Fixes
+
+* **release:** pack linux platform gems without compiling for the host ([155c6c5](https://github.com/seuros/shuttlebay/commit/155c6c526db8f0f6f248472c3b86cd52282302ad))
+
 ## [0.1.3](https://github.com/seuros/shuttlebay/compare/v0.1.2...v0.1.3) (2026-10-07)
 
 
