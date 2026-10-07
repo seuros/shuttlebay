@@ -20,6 +20,13 @@ RbSys::ExtensionTask.new('shuttlebay', GEMSPEC) do |ext|
   ext.cross_platform = NATIVE_PLATFORMS
 end
 
+# Inside rb-sys-dock a platform gem lists the host's lib binary, so packing it
+# would compile for the host, which inherits the image's CARGO_BUILD_TARGET and
+# links the cross target with the host linker. The gem is packed from its stage
+# dir, so the host chain is dead weight there.
+host_binary = "lib/shuttlebay/shuttlebay.#{RbConfig::CONFIG['DLEXT']}"
+Rake::Task[host_binary].clear if ENV['RUBY_TARGET'] && Rake::Task.task_defined?(host_binary)
+
 Minitest::TestTask.create
 
 task test: :compile
