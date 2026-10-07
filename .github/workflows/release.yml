@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Exact release tag created by release-please (e.g. v0.2.0)"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "EXISTING release tag to rebuild (e.g. v0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  native:
+    name: ${{ matrix.platform }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [x86_64-linux, aarch64-linux, x86_64-linux-musl, arm64-darwin, x86_64-darwin]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          path: shuttlebay
+      - name: Install Ruby (mise.toml)
+        uses: jdx/mise-action@v4
+        with:
+          working_directory: shuttlebay
+          install_args: ruby
+      - name: Install gems
+        working-directory: shuttlebay
+        run: bundle install --jobs 4
+      - name: Cross-compile
+        working-directory: shuttlebay
+        run: |
+          bundle exec rb-sys-dock -p ${{ matrix.platform }} -r 4.0 -d "$GITHUB_WORKSPACE" -- \
+            "cd shuttlebay && bundle install && bundle exec rake native:${{ matrix.platform }} gem RUBY_CC_VERSION=4.0.0"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gem-${{ matrix.platform }}
+          path: shuttlebay/pkg/*-${{ matrix.platform }}*.gem
+
+  source:
+    name: source gem
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Install Ruby (mise.toml)
+        uses: jdx/mise-action@v4
+        with:
+          install_args: ruby
+      - run: bundle install --jobs 4
+      - run: bundle exec rake build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gem-ruby
+          path: pkg/*.gem
+
+  publish:
+    needs: [native, source]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: gem-*
+          merge-multiple: true
+          path: pkg
+      - name: Attach gems to the GitHub release (pushed to rubygems.org by hand)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" pkg/*.gem --clobber --repo "${{ github.repository }}"

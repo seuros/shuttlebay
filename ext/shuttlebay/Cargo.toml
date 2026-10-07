@@ -1,0 +1,31 @@
+[package]
+name = "shuttlebay"
+version = "0.1.0" # x-release-please-version
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors = ["Abdelkader Boudih <oss@seuros.com>"]
+description = "Ruby engine for Mothership HTTP bays: docking protocol codec and Rack env builder"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[lints.rust]
+unsafe_code = "deny"
+unused_must_use = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+
+[dependencies]
+magnus = { version = "0.9", features = ["bytes"] }
+rb-sys = "0.9.124"
+mothership-docking-protocol = "0.2.0"
+serde_json = "1.0"
+state-machines = "0.30"

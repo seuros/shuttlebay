@@ -1,0 +1,11 @@
+/.bundle/
+/pkg/
+/tmp/
+/target/
+Gemfile.lock
+
+*.bundle
+*.so
+*.dSYM/
+ext/**/Makefile
+ext/**/mkmf.log

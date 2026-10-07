@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "ruby",
+  "include-component-in-tag": false,
+  "packages": {
+    ".": {
+      "package-name": "shuttlebay",
+      "version-file": "lib/shuttlebay/version.rb",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "ext/shuttlebay/Cargo.toml"
+        }
+      ]
+    }
+  }
+}

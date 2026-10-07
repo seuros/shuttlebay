@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Ruby 4.0
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: shuttlebay
+
+      - uses: seuros/dictator-setup@v1
+
+      - name: dictator
+        working-directory: shuttlebay
+        run: dictator stalint .
+
+      - name: Check out mothership
+        id: mothership
+        continue-on-error: true
+        uses: actions/checkout@v7
+        with:
+          repository: seuros/mothership
+          path: mothership
+
+      - name: Install Ruby and Rust (mise.toml)
+        uses: jdx/mise-action@v4
+        with:
+          working_directory: shuttlebay
+
+      - name: Install gems
+        working-directory: shuttlebay
+        run: bundle install --jobs 4
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: shuttlebay
+
+      - name: Cache mothership build
+        if: steps.mothership.outcome == 'success'
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: mothership
+          workspaces: mothership
+
+      - name: rustfmt
+        working-directory: shuttlebay
+        run: cargo fmt --check
+
+      - name: clippy (engine)
+        working-directory: shuttlebay
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build mothership
+        if: steps.mothership.outcome == 'success'
+        working-directory: mothership
+        run: cargo build --features tls
+
+      - name: Minitest
+        working-directory: shuttlebay
+        env:
+          MOTHERSHIP_BIN: ${{ github.workspace }}/mothership/target/debug/mothership
+        run: bundle exec rake test

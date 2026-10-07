@@ -1,0 +1,12 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative '../lib/shuttlebay/logger'
+
+begin
+  require_relative '../lib/shuttlebay/runtime'
+  Shuttlebay::Server.from_env(ARGV).run
+rescue StandardError, ScriptError => e
+  Shuttlebay::Logger.new.error('shuttlebay stopped', **Shuttlebay::Logger.error_fields(e))
+  exit 1
+end
