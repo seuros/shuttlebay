@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/seuros/shuttlebay/compare/v0.1.1...v0.1.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **release:** let rb-sys-dock pick the cross Ruby instead of forcing 4.0.0 ([0dd6dbe](https://github.com/seuros/shuttlebay/commit/0dd6dbe96e504da50fb073a1a24de2382d86f37b))
+
 ## [0.1.1](https://github.com/seuros/shuttlebay/compare/v0.1.0...v0.1.1) (2026-10-07)
 
 
