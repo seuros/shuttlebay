@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/seuros/shuttlebay/compare/v0.1.2...v0.1.3) (2026-10-07)
+
+
+### Bug Fixes
+
+* **release:** build platform gems with the host's stable Rust (rb-sys images ship 1.98) ([a301118](https://github.com/seuros/shuttlebay/commit/a3011183061a6c621d841070c32e2d171a174cdd))
+
 ## [0.1.2](https://github.com/seuros/shuttlebay/compare/v0.1.1...v0.1.2) (2026-10-07)
 
 
