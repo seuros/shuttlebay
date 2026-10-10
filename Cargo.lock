@@ -69,9 +69,9 @@ dependencies = [
 
 [[package]]
 name = "either"
-version = "1.18.0"
+version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
+checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
 name = "glob"
@@ -154,9 +154,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "mothership-docking-protocol"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aaec5966e84e1a3c65b5846bd89c0c0621de6c75362f9c669636449fdf5a4b99"
+checksum = "e43cb62ea01813b2fe88036c2e65c724a0020f97139023f4b8aea5e78626461b"
 dependencies = [
  "serde",
  "serde_json",
@@ -289,14 +289,14 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.6",
+ "syn 3.0.7",
 ]
 
 [[package]]
 name = "serde_json"
-version = "1.0.151"
+version = "1.0.152"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
+checksum = "1741ab7a6cc54a03a89b5d563ed60075c277d9e3cfa73ad0c1f23f23974703c6"
 dependencies = [
  "itoa",
  "memchr",
@@ -319,7 +319,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "shuttlebay"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "magnus",
  "mothership-docking-protocol",
@@ -330,9 +330,9 @@ dependencies = [
 
 [[package]]
 name = "state-machines"
-version = "0.30.0"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2bc4296143483a9608a37ba4cf9955b42b8e2154dc58917df4f9cbe8120ebb4"
+checksum = "b5d6ea409cf8aab752f80e2fc8b8e36c3482e79bdb7737e7bcfa587f7aefd9ab"
 dependencies = [
  "state-machines-core",
  "state-machines-macro",
@@ -340,15 +340,15 @@ dependencies = [
 
 [[package]]
 name = "state-machines-core"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54b3da777f8a61919bdb3c6e9e445f2995f851b967e5d73b5949290dccfdcddd"
+checksum = "8670360fdd500c432c75037680a88e6df0582689c1754093b78aa9f393993127"
 
 [[package]]
 name = "state-machines-macro"
-version = "0.30.0"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edf80d0c48518c7fb7fbb1dd4dda13a8dc189c1f15ac435545b351d5f2c276b1"
+checksum = "b508e8785f5e4b4e1aae1e0c56085c9ce0192158fb41230a71ac262ad33b3385"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -368,9 +368,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.6"
+version = "3.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8593e8e72159ed2257d083c7a454a85cbf854f37a0966d8d483aff8c8a3ebcee"
+checksum = "d62a2e0561533f2ca2561d0cf27fd9fedb640a1bf2616ff5d5c80d99017faadc"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -394,7 +394,7 @@ checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.6",
+ "syn 3.0.7",
 ]
 
 [[package]]

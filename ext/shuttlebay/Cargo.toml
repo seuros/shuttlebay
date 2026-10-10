@@ -26,6 +26,6 @@ expect_used = "deny"
 [dependencies]
 magnus = { version = "0.9", features = ["bytes"] }
 rb-sys = "0.9.124"
-mothership-docking-protocol = "0.2.0"
+mothership-docking-protocol = "0.3.0"
 serde_json = "1.0"
-state-machines = "0.30"
+state-machines = "0.31"
