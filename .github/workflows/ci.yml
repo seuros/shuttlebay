@@ -58,7 +58,7 @@ jobs:
         working-directory: mothership
         run: cargo build --features tls
 
-      - name: Minitest
+      - name: padded_cell
         working-directory: shuttlebay
         env:
           MOTHERSHIP_BIN: ${{ github.workspace }}/mothership/target/debug/mothership

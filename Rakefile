@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require 'bundler/gem_tasks'
-require 'minitest/test_task'
 require 'rb_sys/extensiontask'
 
 GEMSPEC = Gem::Specification.load('shuttlebay.gemspec')
@@ -27,9 +26,10 @@ end
 host_binary = "lib/shuttlebay/shuttlebay.#{RbConfig::CONFIG['DLEXT']}"
 Rake::Task[host_binary].clear if ENV['RUBY_TARGET'] && Rake::Task.task_defined?(host_binary)
 
-Minitest::TestTask.create
-
-task test: :compile
+desc 'Run the suite with padded_cell (compiles the extension first)'
+task test: :compile do
+  sh 'bundle', 'exec', 'padded_cell', *ENV.fetch('TESTOPTS', '').split
+end
 task default: :test
 
 namespace :platforms do
