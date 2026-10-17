@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0](https://github.com/seuros/shuttlebay/compare/v0.1.4...v0.2.0) (2026-10-17)
+
+
+### Features
+
+* drop the middleware Mothership does, edge cache helpers ([718aa6f](https://github.com/seuros/shuttlebay/commit/718aa6f39f9a37c26a6b679d97eed1a9e7423a7d))
+* Process.warmup before serving, fork_from bays ([064eeac](https://github.com/seuros/shuttlebay/commit/064eeac54079c5434e1f3e998f1d380e42dd9c1c))
+
+
+### Bug Fixes
+
+* each fork worker serves one bay, as that bay ([6a7ea9d](https://github.com/seuros/shuttlebay/commit/6a7ea9d65d23ebe5bd68c41c6c8641b8afba06d8))
+
+
+### Performance Improvements
+
+* **engine:** interned env keys, shared values, whole replies in one write ([8a6b557](https://github.com/seuros/shuttlebay/commit/8a6b55733ba131464f57476de92a3e41dab77b7e))
+
 ## [0.1.4](https://github.com/seuros/shuttlebay/compare/v0.1.3...v0.1.4) (2026-10-07)
 
 
