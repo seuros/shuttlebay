@@ -15,6 +15,10 @@ flowchart TD
     master --> w1["worker 1<br/>threads"]
 ```
 
+**New here?** [docs/guide.md](docs/guide.md) walks a Rails app from install to
+production: the manifest, coming from Puma, moving `Rack::Attack` rules,
+caching, TLS and HTTP/2, Docker and Kamal, several hosts.
+
 ## Install
 
 ```ruby
@@ -207,8 +211,12 @@ For HTTPS, run Mothership with a `tls` bind and the app as a docking upstream
   bay's `request_timeout`). A dead worker is re-forked with backoff.
 - **Deploys:** `kill -USR1` the mothership process to roll the bay to new code
   with no dropped requests (phased restart).
-- **TLS:** terminated by Mothership on a `tls` bind; the app sees
-  `rack.url_scheme = "https"`.
+- **TLS:** terminated by Mothership on a `tls` bind (guardship 0.2.1 and
+  later ship with TLS); the app sees `rack.url_scheme = "https"`.
+- **HTTP/2:** browsers get it from Mothership's `tls` binds (ALPN), or from
+  the CDN or proxy in front; cleartext binds also take HTTP/2 with prior
+  knowledge. The app is unaffected: every request reaches it the same way,
+  as a Rack env, whatever the client spoke.
 - **Logs:** JSON lines on stdout, which Mothership passes through.
 
 ## Environment (set by Mothership)

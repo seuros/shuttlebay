@@ -23,7 +23,7 @@ Gem::Specification.new do |spec|
   spec.metadata['cargo_crate_name'] = 'shuttlebay'
   spec.metadata['cargo_manifest_path'] = 'ext/shuttlebay/Cargo.toml'
 
-  spec.files = Dir['lib/**/*.rb'] + Dir['ext/shuttlebay/**/*.{rs,rb,toml}'] +
+  spec.files = Dir['lib/**/*.rb'] + Dir['ext/shuttlebay/**/*.{rs,rb,toml}'] + Dir['docs/**/*.md'] +
                %w[Cargo.toml Cargo.lock exe/shuttlebay README.md LICENSE.txt]
   spec.extensions = ['ext/shuttlebay/extconf.rb']
   spec.bindir = 'exe'
