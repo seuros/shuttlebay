@@ -26,8 +26,13 @@ class ServerTest < Minitest::Test
     }
   RUBY
 
+  # Hooks are global: this one runs in every worker, the primary's too.
   FORK_CONFIG_RU = <<~RUBY
-    run ->(env) { [200, { "content-type" => "text/plain" }, ["\#{Process.pid}:\#{Process.ppid}"]] }
+    Shuttlebay.on_worker_boot { |index, ship| File.write(File.join(ENV["HOOK_DIR"], "boot-\#{ship}-\#{index}"), "") }
+    run lambda { |env|
+      listening = ObjectSpace.each_object(UNIXServer).reject(&:closed?).map(&:path)
+      [200, { "content-type" => "text/plain" }, ["\#{Process.pid}:\#{Process.ppid}:\#{ENV['MS_SHIP']}:\#{listening.join(',')}"]]
+    }
   RUBY
 
   COMPACTIONS_RU = <<~RUBY
@@ -108,17 +113,24 @@ class ServerTest < Minitest::Test
   def test_forks_serve_their_own_app_from_workers_of_the_same_master
     boot(workers: 1, threads: 1, forks: [fork_spec('fork-test', FORK_CONFIG_RU, workers: 2)])
 
-    primary_pid, = served_by(dock_link)
+    primary_pid, primary_index = served_by(dock_link)
     docks = []
     forked = Array.new(2) do
       link = dock_link(@fork_socket) { |dock| docks << dock }
-      link.request(params).body.split(':').map(&:to_i)
+      link.request(params).body.split(':')
     end
 
     assert_equal ['fork-test'], docks.map { |dock| dock['ship'] }.uniq, 'fork links dock as the fork bay'
     assert_equal 2, forked.map(&:first).uniq.size, 'the fork runs its own workers'
-    assert_equal [@pid], forked.map(&:last).uniq, 'fork workers are children of the master'
-    refute_includes forked.map(&:first), primary_pid
+    assert_equal [@pid.to_s], forked.map { _2 }.uniq, 'fork workers are children of the master'
+    refute_includes forked.map(&:first), primary_pid.to_s
+    assert_equal 0, primary_index, 'a hook taking only the index still gets it'
+    assert_equal [['fork-test', @fork_socket]], forked.map { [_3, _4] }.uniq,
+                 "a fork worker is its bay's: MS_SHIP, and no other bay's listening socket"
+    boots = Dir.children(@dir).grep(/\Aboot-/).sort
+    assert_equal %w[boot-fork-test-0 boot-fork-test-1 boot-server-test-0], boots, 'hooks hear which bay booted'
+    ships = log_lines(File.read(@log)).select { _1['msg'] == 'worker serving' }.map { _1['ship'] }
+    assert_equal %w[fork-test fork-test server-test], ships.sort, 'each worker logs as its bay'
 
     stop_master
     refute File.exist?(@fork_socket), 'fork socket must be removed on shutdown'

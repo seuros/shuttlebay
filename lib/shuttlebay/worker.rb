@@ -41,7 +41,7 @@ module Shuttlebay
     def run(trap_signals: true)
       @wake_r, @wake_w = IO.pipe
       previous = trap_signals(SIGNALS, @wake_w) if trap_signals
-      Shuttlebay.run_hooks(:worker_boot, @index) if forked?
+      Shuttlebay.run_hooks(:worker_boot, @index, @ship) if forked?
       pool = spawn_pool
       @logger.info('worker serving', index: @index, threads: @threads, reactors: @reactors)
 
@@ -158,7 +158,7 @@ module Shuttlebay
     end
 
     def run_shutdown_hooks
-      Shuttlebay.run_hooks(:worker_shutdown, @index)
+      Shuttlebay.run_hooks(:worker_shutdown, @index, @ship)
     rescue StandardError => e
       @logger.error('on_worker_shutdown hook failed', **Logger.error_fields(e))
     end

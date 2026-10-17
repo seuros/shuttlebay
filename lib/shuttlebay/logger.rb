@@ -16,6 +16,11 @@ module Shuttlebay
       define_method(level) { |msg, **fields| log(level, msg, **fields) }
     end
 
+    # This logger as `ship`'s: same stream, another ship name.
+    def for_ship(ship)
+      ship == @ship ? self : self.class.new(@io, ship: ship)
+    end
+
     def log(level, msg, **fields)
       line = JSON.generate({ level: level, msg: msg, ship: @ship, pid: Process.pid, **fields })
       @io.write("#{line}\n")

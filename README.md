@@ -121,7 +121,7 @@ there is no Mothership, and raises `Shuttlebay::Error` when Mothership refuses
 
 ```ruby
 Shuttlebay.before_fork { ActiveRecord::Base.connection_pool.disconnect! }
-Shuttlebay.on_worker_boot { |index| Rails.logger.info("worker #{index} up") }
+Shuttlebay.on_worker_boot { |index, ship| Rails.logger.info("#{ship} worker #{index} up") }
 Shuttlebay.on_worker_shutdown { |index| Rails.logger.info("worker #{index} drained") }
 Shuttlebay.out_of_band { GC.start }   # runs when a worker has no request in flight
 run Rails.application
@@ -211,7 +211,10 @@ For HTTPS, run Mothership with a `tls` bind and the app as a docking upstream
   `config.ru` skips it.
 - **Forks:** a `fork_from` bay in the manifest is served by this master: it
   loads that bay's app too and forks its workers, sharing the preloaded heap.
-  A fork app that fails to load is logged and skipped.
+  A fork app that fails to load is logged and skipped. Each worker serves one
+  bay: it holds only that bay's socket, logs and sees (`MS_SHIP`) its name,
+  and hooks get it as their second argument (`|index, ship|`; hooks taking
+  only the index keep working).
 - **Signals:** on `TERM`, workers stop accepting, drop idle links, and finish
   in-flight requests within `MS_BAY_DRAIN_TIMEOUT` (Mothership passes the
   bay's `request_timeout`). A dead worker is re-forked with backoff.

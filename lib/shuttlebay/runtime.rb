@@ -55,8 +55,13 @@ module Shuttlebay
       @fiber_scheduler_factory = factory
     end
 
-    def run_hooks(name, *)
-      hooks.fetch(name).each { |hook| hook.call(*) }
+    # Run `name`'s hooks with `args`, each given only as many as it takes:
+    # `on_worker_boot { |index| }` and `{ |index, ship| }` both work, lambdas
+    # and methods included.
+    def run_hooks(name, *args)
+      hooks.fetch(name).each do |hook|
+        hook.call(*(hook.arity.negative? ? args : args.first(hook.arity)))
+      end
     end
 
     # Whether Mothership does `concern` for this app, so its Rack middleware

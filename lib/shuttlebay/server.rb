@@ -161,7 +161,22 @@ module Shuttlebay
     end
 
     def spawn_worker(slot)
-      fork { run_worker_process(slot.index, SIGNALS) { worker(slot.group, index: slot.index) } }
+      fork do
+        become(slot.group)
+        run_worker_process(slot.index, SIGNALS) { worker(slot.group, index: slot.index) }
+      end
+    end
+
+    # In a freshly forked worker of `group`: it serves that bay alone, so the
+    # other bays' listening sockets are closed, and a fork's worker logs (and
+    # sees in MS_SHIP) the fork's name rather than its parent's.
+    def become(group)
+      bound.each { |server, path| server.close unless path == group.socket_path }
+      return if group.ship == ship
+
+      ENV['MS_SHIP'] = group.ship
+      @logger = @logger.respond_to?(:for_ship) ? @logger.for_ship(group.ship) : @logger
+      Shuttlebay.logger = @logger
     end
 
     def reap

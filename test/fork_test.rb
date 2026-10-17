@@ -46,6 +46,24 @@ class ForkTest < Minitest::Test
     (web + mcp).each { |(_, pid, _)| assert_dead(pid, "worker #{pid} of the previous generation is still alive") }
   end
 
+  # A deploy whose fork app no longer loads is abandoned: the parent's new
+  # generation boots, the fork never docks with it (within its 10s, not the
+  # bay's whole boot timeout), and the running generation keeps serving both.
+  def test_a_deploy_that_breaks_the_fork_app_keeps_the_running_generation
+    start_mothership
+    master = seen('/').first.last
+
+    File.write(File.join(@dir, 'mcp.ru'), "raise 'broken deploy'\n")
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    Process.kill('USR1', @pid)
+    wait_for_log('Phased restart aborted', timeout: 60)
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+    assert_operator elapsed, :<, 25, 'abandoned within the fork\'s dock deadline, not the 30s boot timeout'
+    served = seen('/') + seen('/mcp')
+    assert_equal [master], served.map(&:last).uniq, 'the running generation serves both bays'
+  end
+
   def test_a_fork_redocks_once_its_parent_is_relaunched
     start_mothership
     master = seen('/mcp').first.last
