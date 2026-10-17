@@ -74,11 +74,15 @@ module Shuttlebay
     def respond(io, codec, env, status, headers, body)
       head_sent = false
       kind, path = reply_kind(env, status, body)
-      chunks = body.to_ary if kind == :stream && body.respond_to?(:to_ary)
+      if kind == :stream && body.respond_to?(:to_ary)
+        # The whole body is in hand: head, body and FIN leave in one write.
+        codec.reply_whole(io, status, headers, body.to_ary)
+        return [true, nil]
+      end
 
       codec.reply(io, status, headers, kind, path)
       head_sent = true
-      write_body(io, codec, body, chunks) if kind == :stream
+      write_body(io, codec, body) if kind == :stream
       codec.finish(io)
       [true, nil]
     rescue *LINK_LOST => e
@@ -100,10 +104,8 @@ module Shuttlebay
       [:stream, nil]
     end
 
-    def write_body(io, codec, body, chunks)
-      if chunks
-        chunks.each { |chunk| codec.write(io, chunk) }
-      elsif body.respond_to?(:each)
+    def write_body(io, codec, body)
+      if body.respond_to?(:each)
         body.each do |chunk|
           codec.write(io, chunk)
           codec.flush(io)

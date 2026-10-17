@@ -15,6 +15,7 @@ macro_rules! ensure {
 
 mod codec;
 mod headers;
+mod interned;
 mod link;
 
 use codec::Codec;
@@ -22,6 +23,7 @@ use codec::Codec;
 static PROTOCOL_ERROR: OnceLock<Opaque<ExceptionClass>> = OnceLock::new();
 static STRING_IO: OnceLock<Opaque<RClass>> = OnceLock::new();
 static ENGINE: OnceLock<Opaque<RModule>> = OnceLock::new();
+static NULL_INPUT: OnceLock<Opaque<Value>> = OnceLock::new();
 
 pub(crate) fn protocol_error(ruby: &Ruby, message: impl Into<String>) -> Error {
     let class = cached(ruby, &PROTOCOL_ERROR).unwrap_or_else(|| ruby.exception_runtime_error());
@@ -40,6 +42,18 @@ impl<T, E: Display> OrProtocolError<T> for Result<T, E> {
 
 pub(crate) fn spool_file(ruby: &Ruby) -> Result<Value, Error> {
     initialised(ruby, &ENGINE, "Shuttlebay::Engine was not initialised")?.funcall("spool_file", ())
+}
+
+/// `Shuttlebay::Engine::NULL_INPUT`, the `rack.input` of every bodiless
+/// request. Defined in Ruby after this library loads, so resolved on first use.
+pub(crate) fn null_input(ruby: &Ruby) -> Result<Value, Error> {
+    if let Some(input) = cached(ruby, &NULL_INPUT) {
+        return Ok(input);
+    }
+    let engine = initialised(ruby, &ENGINE, "Shuttlebay::Engine was not initialised")?;
+    let input: Value = engine.const_get("NULL_INPUT")?;
+    cache(&NULL_INPUT, input);
+    Ok(input)
 }
 
 pub(crate) fn string_io(ruby: &Ruby) -> Result<RClass, Error> {
@@ -65,6 +79,7 @@ fn initialised<T: ReprValue>(
 #[magnus::init(name = "shuttlebay")]
 fn init(ruby: &Ruby) -> Result<(), Error> {
     ruby.require("stringio")?;
+    interned::init(ruby);
     cache(&STRING_IO, ruby.class_object().const_get::<_, RClass>("StringIO")?);
 
     let shuttlebay = ruby.define_module("Shuttlebay")?;
@@ -82,6 +97,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     codec.define_method("dock", method!(Codec::dock, 3))?;
     codec.define_method("read_request", method!(Codec::read_request, 2))?;
     codec.define_method("reply", method!(Codec::reply, -1))?;
+    codec.define_method("reply_whole", method!(Codec::reply_whole, 4))?;
     codec.define_method("write", method!(Codec::write, 2))?;
     codec.define_method("flush", method!(Codec::flush, 1))?;
     codec.define_method("finish", method!(Codec::finish, 1))?;

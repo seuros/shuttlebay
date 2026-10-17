@@ -33,6 +33,31 @@ class HandlerTest < Minitest::Test
     end
   end
 
+  def test_large_to_ary_body_leaves_with_its_fin_in_one_write
+    page = 'p' * 300_000
+    app = ->(_env) { [200, { 'content-type' => 'text/html' }, [page]] }
+
+    with_link(app) do |mothership, io|
+      writes_after_dock = io.writes
+      reply = mothership.request(params)
+
+      assert_equal page, reply.body
+      assert_equal 2, io.writes - writes_after_dock, 'response in one write, then Ready'
+    end
+  end
+
+  def test_non_string_body_chunk_becomes_a_500
+    app = ->(_env) { [200, {}, [:not_a_string]] }
+
+    with_link(app) do |mothership, _io|
+      reply = mothership.request(params)
+
+      assert_equal 500, reply.status
+      assert_equal 200, (mothership.request(params) && 200), 'link stays usable'
+    end
+    assert(log_lines.any? { |line| line['msg'] == 'response failed' && line['error'] == 'TypeError' })
+  end
+
   def test_each_body_streams_each_chunk_as_it_is_produced
     gate = Thread::Queue.new
     body = Object.new

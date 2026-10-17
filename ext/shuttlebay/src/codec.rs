@@ -1,16 +1,18 @@
 use std::{cell::RefCell, fmt::Display};
 
-use magnus::{Error, RHash, RString, Ruby, Symbol, Value, prelude::*, scan_args::scan_args};
+use magnus::{
+    Error, RArray, RHash, RString, Ruby, Symbol, Value, prelude::*, scan_args::scan_args,
+};
 use mothership_docking_protocol::{
-    Dock, HAUL_CHUNK_LEN, Hail, MAX_FRAME_PAYLOAD, MessageType, Moored, ProtocolError, Reply,
-    ReplyBody, VERSION, decode_hail, decode_haul, decode_header, encode_dock, encode_ready,
-    encode_reply, push_haul,
+    Dock, HAUL_CHUNK_LEN, Hail, MAX_FRAME_PAYLOAD, MessageType, Moored, Pair, ProtocolError, Reply,
+    ReplyBody, VERSION, decode_hail, decode_haul, decode_header, encode_dock, encode_haul_header,
+    encode_ready, encode_reply, push_haul,
 };
 
 use crate::{
-    OrProtocolError, headers,
+    OrProtocolError, headers, interned,
     link::{self, LinkEvent, LinkState},
-    protocol_error, spool_file, string_io,
+    null_input, protocol_error, spool_file, string_io,
 };
 
 const READ_CHUNK: usize = 64 * 1024;
@@ -18,6 +20,17 @@ const FLUSH_THRESHOLD: usize = 64 * 1024;
 pub const SPOOL_THRESHOLD: u64 = 1024 * 1024;
 
 const MAX_BODY: u64 = 4 * 1024 * 1024 * 1024;
+
+/// CGI params whose values come from a small set and that apps replace
+/// rather than mutate: each value is one shared frozen String.
+const SHARED_VALUES: [&[u8]; 6] = [
+    b"REQUEST_METHOD",
+    b"SCRIPT_NAME",
+    b"SERVER_PORT",
+    b"SERVER_PROTOCOL",
+    b"SERVER_SOFTWARE",
+    b"HTTPS",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -101,13 +114,17 @@ impl Codec {
 
         let env: RHash = template.funcall("dup", ())?;
         for (name, value) in &hail.params {
-            let name = std::str::from_utf8(name)
-                .map_or_else(|_| ruby.str_from_slice(name), |name| ruby.str_new(name));
-            env.aset(name, ruby.str_from_slice(value))?;
+            let value = if shares_value(name, value) {
+                interned::value(ruby, value)?
+            } else {
+                ruby.str_from_slice(value)
+            };
+            env.aset(interned::key(ruby, name)?, value)?;
         }
         let secure = hail.params.iter().any(|(name, value)| name == b"HTTPS" && value == b"on");
-        env.aset("rack.url_scheme", if secure { "https" } else { "http" })?;
-        env.aset("rack.input", input)?;
+        let scheme: &[u8] = if secure { b"https" } else { b"http" };
+        env.aset(interned::key(ruby, b"rack.url_scheme")?, interned::value(ruby, scheme)?)?;
+        env.aset(interned::key(ruby, b"rack.input")?, input)?;
 
         rb_self.try_with_state(ruby, |state| link::begin(&mut state.link, hail.request_id))?;
         Ok(Some(env))
@@ -122,10 +139,7 @@ impl Codec {
         let (path,) = args.optional;
         let path = path.flatten();
 
-        let status =
-            u16::try_from(status).ok().filter(|status| (100..=599).contains(status)).ok_or_else(
-                || Error::new(ruby.exception_arg_error(), format!("invalid HTTP status: {status}")),
-            )?;
+        let status = http_status(ruby, status)?;
         let kind = match kind.name()?.as_ref() {
             "empty" => Kind::Empty,
             "stream" => Kind::Stream,
@@ -161,18 +175,64 @@ impl Codec {
             Kind::Tunnel => LinkEvent::ReplyTunnel,
         };
         rb_self.try_with_state(ruby, |state| -> Result<(), &str> {
-            let (request_id, _) = link::advance(&mut state.link, event, |from| {
-                if from == LinkState::Idle {
-                    "reply called without a request"
-                } else {
-                    "reply already sent for this request"
-                }
-            })?;
-            let frame = encode_reply(&Reply { request_id, status, headers, body })
-                .map_err(|_| "reply head exceeds the frame size limit")?;
-            state.outbox.extend_from_slice(&frame);
-            Ok(())
+            push_reply(state, event, status, headers, body).map(drop)
         })
+    }
+
+    /// Send a whole response at once: Reply head, body and FIN leave in one
+    /// write, so Mothership always lands it as a complete body. A single chunk
+    /// (a rendered page) is handed to the socket as is, never copied into a
+    /// frame buffer; several are framed together.
+    pub fn reply_whole(
+        ruby: &Ruby,
+        rb_self: &Self,
+        io: Value,
+        status: i64,
+        headers: RHash,
+        chunks: RArray,
+    ) -> Result<(), Error> {
+        let status = http_status(ruby, status)?;
+        let headers = headers::flatten(ruby, headers)?;
+        // Checked before the link moves, so a bad body still gets a 500.
+        for index in 0..chunks.len() {
+            body_chunk(ruby, chunks, index)?;
+        }
+        let only = (chunks.len() == 1)
+            .then(|| body_chunk(ruby, chunks, 0))
+            .transpose()?
+            .filter(|chunk| chunk.len() <= HAUL_CHUNK_LEN);
+
+        let request_id = rb_self.try_with_state(ruby, |state| {
+            push_reply(state, LinkEvent::ReplyStream, status, headers, ReplyBody::Stream)
+        })?;
+
+        if let Some(chunk) = only {
+            rb_self.try_with_state(ruby, |state| -> Result<(), &str> {
+                let haul = encode_haul_header(request_id, true, chunk.len())
+                    .map_err(|_| "body chunk exceeds the frame size limit")?;
+                state.outbox.extend_from_slice(&haul);
+                finish_stream(state)
+            })?;
+            let head = rb_self.with_state(ruby, |state| std::mem::take(&mut state.outbox))?;
+            // A tuple keeps both Strings on the stack, visible to the GC,
+            // for the whole write.
+            let _: Value = io.funcall("write", (ruby.str_from_slice(&head), chunk))?;
+            return Ok(());
+        }
+
+        for index in 0..chunks.len() {
+            let bytes = body_chunk(ruby, chunks, index)?.to_bytes();
+            rb_self.try_with_state(ruby, |state| {
+                push_body(&mut state.outbox, request_id, &bytes, false)
+                    .map_err(|_| "body chunk exceeds the frame size limit")
+            })?;
+        }
+        rb_self.try_with_state(ruby, |state| -> Result<(), &str> {
+            push_haul(&mut state.outbox, request_id, true, &[])
+                .map_err(|_| "FIN frame could not be encoded")?;
+            finish_stream(state)
+        })?;
+        rb_self.flush_to(ruby, io)
     }
 
     pub fn write(ruby: &Ruby, rb_self: &Self, io: Value, chunk: RString) -> Result<(), Error> {
@@ -326,6 +386,9 @@ impl Codec {
             "request body of {} bytes exceeds the engine limit",
             hail.content_length
         );
+        if hail.content_length == 0 {
+            return null_input(ruby);
+        }
         let expected = usize::try_from(hail.content_length)
             .map_err(|_| protocol_error(ruby, "request body does not fit in memory"))?;
         let mut sink = if hail.content_length > SPOOL_THRESHOLD {
@@ -333,9 +396,7 @@ impl Codec {
         } else {
             BodySink::Memory(Vec::with_capacity(expected))
         };
-        if expected > 0 {
-            self.receive_body(ruby, io, hail, expected, &mut sink)?;
-        }
+        self.receive_body(ruby, io, hail, expected, &mut sink)?;
         sink.into_input(ruby)
     }
 
@@ -445,6 +506,56 @@ impl BodySink {
             }
         }
     }
+}
+
+fn http_status(ruby: &Ruby, status: i64) -> Result<u16, Error> {
+    u16::try_from(status).ok().filter(|status| (100..=599).contains(status)).ok_or_else(|| {
+        Error::new(ruby.exception_arg_error(), format!("invalid HTTP status: {status}"))
+    })
+}
+
+fn shares_value(name: &[u8], value: &[u8]) -> bool {
+    SHARED_VALUES.contains(&name) || (name == b"QUERY_STRING" && value.is_empty())
+}
+
+/// Body chunk `index`: Rack bodies yield Strings, nothing else.
+fn body_chunk(ruby: &Ruby, chunks: RArray, index: usize) -> Result<RString, Error> {
+    let offset = isize::try_from(index)
+        .map_err(|_| Error::new(ruby.exception_range_error(), "body array too long"))?;
+    let chunk: Value = chunks.entry(offset)?;
+    RString::from_value(chunk).ok_or_else(|| {
+        Error::new(
+            ruby.exception_type_error(),
+            format!("body chunk must be a String, got {}", chunk.class().inspect()),
+        )
+    })
+}
+
+/// Move the link past its Reply and queue the Reply head; the request id is
+/// what the body frames must carry.
+fn push_reply(
+    state: &mut State,
+    event: LinkEvent,
+    status: u16,
+    headers: Vec<Pair>,
+    body: ReplyBody,
+) -> Result<u32, &'static str> {
+    let (request_id, _) = link::advance(&mut state.link, event, |from| {
+        if from == LinkState::Idle {
+            "reply called without a request"
+        } else {
+            "reply already sent for this request"
+        }
+    })?;
+    let frame = encode_reply(&Reply { request_id, status, headers, body })
+        .map_err(|_| "reply head exceeds the frame size limit")?;
+    state.outbox.extend_from_slice(&frame);
+    Ok(request_id)
+}
+
+/// A streamed body is complete: the link waits for `ready`.
+fn finish_stream(state: &mut State) -> Result<(), &'static str> {
+    link::advance(&mut state.link, LinkEvent::Finish, |_| "finish called twice").map(drop)
 }
 
 fn push_body(
