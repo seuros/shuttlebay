@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'json'
 require 'socket'
 
 module Shuttlebay
@@ -11,9 +12,10 @@ module Shuttlebay
     STABLE_AFTER = 30.0
     SIGNALS = { 'TERM' => 'T', 'INT' => 'I', 'QUIT' => 'Q', 'CHLD' => 'C' }.freeze
 
-    Slot = Struct.new(:index, :pid, :started_at, :backoff, :respawn_at)
+    Group = Struct.new(:ship, :app_path, :socket_path, :workers, :threads, :app, :listener)
+    Slot = Struct.new(:group, :index, :pid, :started_at, :backoff, :respawn_at)
 
-    attr_reader :app_path, :socket_path, :workers, :threads, :ship
+    attr_reader :app_path, :socket_path, :workers, :threads, :ship, :forks
 
     def self.from_env(argv, env = ENV)
       socket_path = env.fetch('MS_SOCKET_PATH') do
@@ -24,34 +26,48 @@ module Shuttlebay
         socket_path: socket_path,
         workers: Integer(env.fetch('MS_BAY_WORKERS', '0'), 10),
         threads: Integer(env.fetch('MS_BAY_THREADS', '3'), 10),
-        ship: env.fetch('MS_SHIP', 'rack')
+        ship: env.fetch('MS_SHIP', 'rack'),
+        forks: parse_forks(env.fetch('MS_BAY_FORKS', '[]'))
       )
     end
 
-    def initialize(app_path:, socket_path:, workers:, threads:, ship:, logger: Shuttlebay.logger)
+    def self.parse_forks(json)
+      JSON.parse(json).map do |fork|
+        Group.new(fork.fetch('ship'), fork.fetch('app'), fork.fetch('socket'),
+                  Integer(fork.fetch('workers')).clamp(1..), Integer(fork.fetch('threads')))
+      end
+    end
+
+    def initialize(app_path:, socket_path:, workers:, threads:, ship:, forks: [], logger: Shuttlebay.logger)
       raise ArgumentError, "workers must be >= 0 (got #{workers})" if workers.negative?
       raise ArgumentError, "threads must be >= 1 (got #{threads})" if threads < 1
+      forks.each { |fork| raise ArgumentError, "#{fork.ship}: threads must be >= 1" if fork.threads < 1 }
 
       @app_path = app_path
       @socket_path = socket_path
       @workers = workers
       @threads = threads
       @ship = ship
+      @forks = forks
       @logger = logger
       @master_pid = Process.pid
     end
 
     def run
       Shuttlebay.running = true
-      app = load_app
-      @listener = bind
-      @logger.info('app loaded, socket bound', app: app_path, socket: socket_path,
-                                               workers: workers, threads: threads)
+      primary = Group.new(ship, app_path, socket_path, workers.clamp(1..), threads, load_app(app_path))
+      forked = load_forks
+      Process.warmup if Shuttlebay.warmup?
+      [primary, *forked].each do |group|
+        group.listener = bind(group.socket_path)
+        @logger.info('app loaded, socket bound', ship: group.ship, app: group.app_path, socket: group.socket_path,
+                                                 workers: group.workers, threads: group.threads)
+      end
 
-      if workers.zero?
-        worker(app, index: nil).run
+      if workers.zero? && forked.empty?
+        worker(primary, index: nil).run
       else
-        supervise(app)
+        supervise([primary, *forked])
       end
     ensure
       cleanup if Process.pid == @master_pid
@@ -59,7 +75,7 @@ module Shuttlebay
 
     private
 
-    def load_app
+    def load_app(app_path)
       require 'rack'
       require 'rack/builder'
       path = File.expand_path(app_path)
@@ -68,26 +84,45 @@ module Shuttlebay
       Rack::Builder.parse_file(path)
     end
 
-    def bind
+    def load_forks
+      forks.filter_map do |group|
+        group.app = load_app(group.app_path)
+        group
+      rescue StandardError, ScriptError => e
+        @logger.error('fork app failed to load, skipped', ship: group.ship, app: group.app_path,
+                                                          **Logger.error_fields(e))
+        nil
+      end
+    end
+
+    def bind(socket_path)
       if File.exist?(socket_path)
         raise ArgumentError, "#{socket_path} exists and is not a socket" unless File.socket?(socket_path)
 
         File.unlink(socket_path)
       end
-      UNIXServer.new(socket_path).tap { |server| server.listen(1024) }
+      UNIXServer.new(socket_path).tap do |server|
+        server.listen(1024)
+        bound << [server, socket_path]
+      end
     end
 
-    def worker(app, index:)
-      Worker.new(app: app, listener: @listener, threads: threads, workers: workers, ship: ship,
-                 index: index, master_pid: index && @master_pid, logger: @logger)
+    def bound
+      @bound ||= []
     end
 
-    def supervise(app)
+    def worker(group, index:)
+      Worker.new(app: group.app, listener: group.listener, threads: group.threads, workers: group.workers,
+                 ship: group.ship, index: index, master_pid: index && @master_pid, logger: @logger)
+    end
+
+    def supervise(groups)
       wake_r, wake_w = IO.pipe
       previous = trap_signals(SIGNALS, wake_w)
-      @app = app
       Shuttlebay.run_hooks(:before_fork)
-      @slots = Array.new(workers) { |index| Slot.new(index, nil, nil, RESPAWN_MIN, monotonic) }
+      @slots = groups.flat_map do |group|
+        Array.new(group.workers) { |index| Slot.new(group, index, nil, nil, RESPAWN_MIN, monotonic) }
+      end
       @stopping = false
 
       until @stopping && @slots.none?(&:pid)
@@ -120,14 +155,13 @@ module Shuttlebay
       @slots.each do |slot|
         next if slot.pid || slot.respawn_at > now
 
-        slot.pid = spawn_worker(slot.index)
+        slot.pid = spawn_worker(slot)
         slot.started_at = now
       end
     end
 
-    def spawn_worker(index)
-      app = @app
-      fork { run_worker_process(index, SIGNALS) { worker(app, index: index) } }
+    def spawn_worker(slot)
+      fork { run_worker_process(slot.index, SIGNALS) { worker(slot.group, index: slot.index) } }
     end
 
     def reap
@@ -153,7 +187,7 @@ module Shuttlebay
       slot.respawn_at = monotonic + delay
       return if @stopping
 
-      @logger.warn('worker exited, respawning', index: slot.index, pid: pid,
+      @logger.warn('worker exited, respawning', ship: slot.group.ship, index: slot.index, pid: pid,
                                                 status: status && (status.exitstatus || status.termsig),
                                                 uptime: uptime.round(3), respawn_in: delay)
     end
@@ -190,10 +224,12 @@ module Shuttlebay
     end
 
     def cleanup
-      @listener&.close
-      File.unlink(socket_path) if socket_path && File.socket?(socket_path)
-    rescue SystemCallError => e
-      @logger.warn('socket cleanup failed', socket: socket_path, error: e.message)
+      bound.each do |server, path|
+        server.close
+        File.unlink(path) if File.socket?(path)
+      rescue SystemCallError => e
+        @logger.warn('socket cleanup failed', socket: path, error: e.message)
+      end
     end
   end
 end

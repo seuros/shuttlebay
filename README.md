@@ -206,6 +206,12 @@ For HTTPS, run Mothership with a `tls` bind and the app as a docking upstream
 - **Large uploads:** bodies over 1 MiB are spooled to an unlinked temp file
   (`rack.input` is a `Tempfile`). Memory stays bounded however large uploads
   are allowed to be.
+- **Warmup:** the master calls `Process.warmup` once the app is loaded, so
+  workers fork from a compacted heap. `Shuttlebay.warmup = false` in
+  `config.ru` skips it.
+- **Forks:** a `fork_from` bay in the manifest is served by this master: it
+  loads that bay's app too and forks its workers, sharing the preloaded heap.
+  A fork app that fails to load is logged and skipped.
 - **Signals:** on `TERM`, workers stop accepting, drop idle links, and finish
   in-flight requests within `MS_BAY_DRAIN_TIMEOUT` (Mothership passes the
   bay's `request_timeout`). A dead worker is re-forked with backoff.

@@ -13,10 +13,14 @@ module Shuttlebay
   class << self
     attr_accessor :config
 
-    attr_writer :running, :logger
+    attr_writer :running, :logger, :warmup
 
     def running?
       @running == true
+    end
+
+    def warmup?
+      @warmup != false
     end
 
     def logger

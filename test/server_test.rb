@@ -26,6 +26,14 @@ class ServerTest < Minitest::Test
     }
   RUBY
 
+  FORK_CONFIG_RU = <<~RUBY
+    run ->(env) { [200, { "content-type" => "text/plain" }, ["\#{Process.pid}:\#{Process.ppid}"]] }
+  RUBY
+
+  COMPACTIONS_RU = <<~RUBY
+    run ->(env) { [200, { "content-type" => "text/plain" }, [GC.stat(:compact_count).to_s]] }
+  RUBY
+
   def setup
     @dir = Dir.mktmpdir('shuttlebay')
     @socket = File.join(Dir.tmpdir, "gs-#{Process.pid}-#{rand(1 << 16)}.sock")
@@ -33,13 +41,14 @@ class ServerTest < Minitest::Test
     File.write(@config_ru, CONFIG_RU)
     @log = File.join(@dir, 'shuttlebay.log')
     @links = []
+    @fork_socket = "#{@socket.delete_suffix('.sock')}-fork.sock"
   end
 
   def teardown
     @links.each { |link| link.io.close unless link.io.closed? }
     kill_leftover_group if @pid
     FileUtils.rm_rf(@dir)
-    FileUtils.rm_f(@socket)
+    FileUtils.rm_f([@socket, @fork_socket])
   end
 
   def test_preforked_workers_serve_every_link_and_stop_cleanly_on_term
@@ -93,6 +102,45 @@ class ServerTest < Minitest::Test
     pid, = served_by(dock_link)
 
     assert_equal @pid, pid
+    stop_master
+  end
+
+  def test_forks_serve_their_own_app_from_workers_of_the_same_master
+    boot(workers: 1, threads: 1, forks: [fork_spec('fork-test', FORK_CONFIG_RU, workers: 2)])
+
+    primary_pid, = served_by(dock_link)
+    docks = []
+    forked = Array.new(2) do
+      link = dock_link(@fork_socket) { |dock| docks << dock }
+      link.request(params).body.split(':').map(&:to_i)
+    end
+
+    assert_equal ['fork-test'], docks.map { |dock| dock['ship'] }.uniq, 'fork links dock as the fork bay'
+    assert_equal 2, forked.map(&:first).uniq.size, 'the fork runs its own workers'
+    assert_equal [@pid], forked.map(&:last).uniq, 'fork workers are children of the master'
+    refute_includes forked.map(&:first), primary_pid
+
+    stop_master
+    refute File.exist?(@fork_socket), 'fork socket must be removed on shutdown'
+  end
+
+  def test_a_fork_app_that_fails_to_load_is_skipped
+    boot(workers: 1, threads: 1, forks: [fork_spec('broken', "raise 'boom'\n")])
+
+    served_by(dock_link)
+
+    refute File.exist?(@fork_socket), 'a skipped fork binds no socket'
+    assert_includes log_messages, 'fork app failed to load, skipped'
+    stop_master
+  end
+
+  def test_warmup_compacts_the_heap_before_forking_unless_disabled
+    boot(workers: 1, threads: 1, config: COMPACTIONS_RU)
+    assert_operator dock_link.request(params).body.to_i, :>, 0, 'workers fork from a compacted heap'
+    stop_master
+
+    boot(workers: 1, threads: 1, config: "Shuttlebay.warmup = false\n#{COMPACTIONS_RU}")
+    assert_equal 0, dock_link.request(params).body.to_i, 'Shuttlebay.warmup = false skips it'
     stop_master
   end
 
@@ -197,12 +245,13 @@ class ServerTest < Minitest::Test
     assert status.success?, "master should exit 0 on TERM, got #{status.inspect}\n#{File.read(@log)}"
   end
 
-  def boot(workers:, threads:, config: CONFIG_RU)
+  def boot(workers:, threads:, config: CONFIG_RU, forks: [])
     File.write(@config_ru, config)
     env = {
       'MS_SOCKET_PATH' => @socket,
       'MS_BAY_WORKERS' => workers.to_s,
       'MS_BAY_THREADS' => threads.to_s,
+      'MS_BAY_FORKS' => JSON.generate(forks),
       'MS_SHIP' => 'server-test',
       'MS_BAY_TYPE' => 'http',
       'HOOK_DIR' => @dir
@@ -213,10 +262,18 @@ class ServerTest < Minitest::Test
     flunk "shuttlebay did not bind #{@socket} within #{BOOT_TIMEOUT}s:\n#{File.read(@log)}"
   end
 
-  def dock_link
-    link = FakeMothership.new(UNIXSocket.new(@socket))
+  def fork_spec(ship, config, workers: 1, threads: 1)
+    path = File.join(@dir, "#{ship}.ru")
+    File.write(path, config)
+    { ship: ship, app: path, socket: @fork_socket, workers: workers, threads: threads }
+  end
+
+  def dock_link(socket = @socket)
+    Timeout.timeout(BOOT_TIMEOUT) { sleep 0.05 until File.socket?(socket) }
+    link = FakeMothership.new(UNIXSocket.new(socket))
     @links << link
-    Timeout.timeout(10) { link.accept_dock({ 'role' => 'ship-config' }) }
+    dock = Timeout.timeout(10) { link.accept_dock({ 'role' => 'ship-config' }) }
+    yield dock if block_given?
     link
   end
 end
