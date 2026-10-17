@@ -35,6 +35,7 @@ Gem::Specification.new do |spec|
 
   spec.add_development_dependency 'async', '~> 2.46'
   spec.add_development_dependency 'capybara', '>= 3.40'
+  spec.add_development_dependency 'guardship', '>= 0.2.0'
   spec.add_development_dependency 'padded_cell', '~> 0.2'
   spec.add_development_dependency 'railties', '>= 8.1'
   spec.add_development_dependency 'rake', '~> 13.0'

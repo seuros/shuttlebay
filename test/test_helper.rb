@@ -217,12 +217,26 @@ end
 module SubprocessHarness
   LIB = File.expand_path('../lib', __dir__)
   EXE = File.expand_path('../exe/shuttlebay', __dir__)
+  # The Mothership end-to-end tests run against: MOTHERSHIP_BIN, else a
+  # sibling checkout's debug build (the code being worked on), else the one
+  # the guardship gem bundles for this platform.
   MOTHERSHIP_BIN = ENV.fetch('MOTHERSHIP_BIN') do
-    File.expand_path('../../mothership/target/debug/mothership', __dir__)
+    checkout = File.expand_path('../../mothership/target/debug/mothership', __dir__)
+    bundled = begin
+      File.join(Gem::Specification.find_by_name('guardship').gem_dir, 'libexec', 'mothership')
+    rescue Gem::MissingSpecError
+      nil
+    end
+    [checkout, bundled].compact.find { |path| File.executable?(path) } || checkout
   end
 
+  # Skipped where there is no binary, but never in CI: there the suite
+  # must run against guardship's.
   def skip_without_mothership
-    skip "no mothership binary at #{MOTHERSHIP_BIN} (set MOTHERSHIP_BIN)" unless File.executable?(MOTHERSHIP_BIN)
+    return if File.executable?(MOTHERSHIP_BIN)
+
+    message = "no mothership binary at #{MOTHERSHIP_BIN} (set MOTHERSHIP_BIN, or install guardship)"
+    ENV['CI'] ? flunk(message) : skip(message)
   end
 
   def ruby_script(script, *args)

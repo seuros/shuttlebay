@@ -24,14 +24,6 @@ jobs:
         working-directory: shuttlebay
         run: dictator stalint .
 
-      - name: Check out mothership
-        id: mothership
-        continue-on-error: true
-        uses: actions/checkout@v7
-        with:
-          repository: seuros/mothership
-          path: mothership
-
       - name: Install Ruby and Rust (mise.toml)
         uses: jdx/mise-action@v4
         with:
@@ -46,20 +38,6 @@ jobs:
         with:
           workspaces: shuttlebay
 
-      - name: Cache mothership build
-        if: steps.mothership.outcome == 'success'
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: mothership
-          workspaces: mothership
-
-      - name: Build mothership
-        if: steps.mothership.outcome == 'success'
-        working-directory: mothership
-        run: cargo build --features tls
-
       - name: padded_cell
         working-directory: shuttlebay
-        env:
-          MOTHERSHIP_BIN: ${{ github.workspace }}/mothership/target/debug/mothership
         run: bundle exec rake test
