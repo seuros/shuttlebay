@@ -5,7 +5,7 @@ require 'base64'
 require 'net/http'
 
 class MothershipTest < Minitest::Test
-  include SubprocessHarness
+  include MothershipHarness
 
   CONFIG_RU = <<~RUBY
     require "digest"
@@ -33,24 +33,7 @@ class MothershipTest < Minitest::Test
   RUBY
 
   def setup
-    skip_without_mothership
-
-    @dir = Dir.mktmpdir('sb-e2e')
-    @sockets = Dir.mktmpdir('sb', '/tmp')
-    @port = free_port
-    File.write(File.join(@dir, 'config.ru'), CONFIG_RU)
-    @manifest = File.join(@dir, 'ship-manifest.toml')
-    File.write(@manifest, manifest)
-    @log = File.join(@dir, 'mothership.log')
-  end
-
-  def teardown
-    stop_mothership if @pid
-    if !passed? && @log && File.exist?(@log)
-      puts "\n--- mothership log (#{name}) ---\n#{File.read(@log).lines.last(40).join}"
-    end
-    FileUtils.rm_rf(@dir) if @dir
-    FileUtils.rm_rf(@sockets) if @sockets
+    prepare_mothership(CONFIG_RU)
   end
 
   def test_serves_restarts_without_dropping_requests_and_recycles_stuck_workers
@@ -125,76 +108,7 @@ class MothershipTest < Minitest::Test
 
   private
 
-  def manifest
-    <<~TOML
-      [mothership]
-      metrics_port = #{free_port}
-
-      [mothership.bind]
-      http = "127.0.0.1:#{@port}"
-
-      [[bays.http]]
-      name = "web"
-      command = #{RbConfig.ruby.dump}
-      args = ["-I", #{LIB.dump}, #{EXE.dump}, "config.ru"]
-      cwd = #{@dir.dump}
-      workers = 2
-      threads = 2
-      request_timeout = 2
-      boot_timeout = 30
-      routes = [{ bind = "http", pattern = "/.*" }]
-    TOML
-  end
-
-  def start_mothership
-    env = { 'MS_SOCKET_DIR' => @sockets, 'RUST_LOG' => 'info' }
-    @pid = Process.spawn(env, MOTHERSHIP_BIN, 'run', '-c', @manifest, out: @log, err: @log, pgroup: true)
-    Timeout.timeout(60) do
-      sleep 0.2 until begin
-        get('/pid').code == '200'
-      rescue StandardError
-        false
-      end
-    end
-  rescue Timeout::Error
-    flunk "mothership did not serve within 60s:\n#{File.read(@log)}"
-  end
-
-  def stop_mothership
-    Process.kill('TERM', @pid)
-    Timeout.timeout(30) { Process.wait(@pid) }
-  rescue Errno::ESRCH, Errno::ECHILD
-    nil
-  rescue Timeout::Error
-    Process.kill('KILL', -@pid)
-    Process.wait(@pid)
-  ensure
-    @pid = nil
-  end
-
-  def http
-    Net::HTTP.new('127.0.0.1', @port).tap do |client|
-      client.open_timeout = 5
-      client.read_timeout = 10
-    end
-  end
-
-  def get(path) = http.request(Net::HTTP::Get.new(path))
-
-  def post(path, body)
-    request = Net::HTTP::Post.new(path)
-    request.body = body
-    request.content_type = 'application/octet-stream'
-    http.request(request)
-  end
-
   def pids_seen(count)
     Array.new(count) { Thread.new { get('/pid').body.to_i } }.map(&:value).uniq.sort
-  end
-
-  def wait_for_log(text, timeout:)
-    Timeout.timeout(timeout) { sleep 0.2 until File.read(@log).include?(text) }
-  rescue Timeout::Error
-    flunk "no #{text.inspect} in the mothership log within #{timeout}s:\n#{File.read(@log)}"
   end
 end

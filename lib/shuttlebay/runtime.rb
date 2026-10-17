@@ -55,6 +55,39 @@ module Shuttlebay
       hooks.fetch(name).each { |hook| hook.call(*) }
     end
 
+    # Whether Mothership does `concern` for this app, so its Rack middleware
+    # for it can go (the Railtie does this for Rails; elsewhere, in
+    # config.ru):
+    #
+    #   use Rack::ETag unless Shuttlebay.offloaded?(:conditional_get)
+    #   use Rack::Static, urls: [""], root: "public" unless Shuttlebay.offloaded?(:static, "public")
+    #
+    # - :sendfile: `to_path` bodies are streamed by Mothership (Rack::Sendfile)
+    # - :conditional_get: ETags and 304s (Rack::ETag, Rack::ConditionalGet)
+    # - :static, dir: `dir` is served at `/`, pages by name included
+    #   (Rack::Static, ActionDispatch::Static)
+    #
+    # Always false outside Mothership.
+    def offloaded?(concern, dir = nil)
+      return false unless running?
+
+      case concern
+      when :sendfile then true
+      when :conditional_get then ENV['MS_CONDITIONAL_GET'] == '1'
+      when :static then static_root?(dir)
+      else raise ArgumentError, "unknown concern #{concern.inspect} (:sendfile, :conditional_get, :static)"
+      end
+    end
+
+    # Whether Mothership serves `dir` at `/` (it lists those in MS_STATIC_ROOTS).
+    def static_root?(dir, roots = ENV.fetch('MS_STATIC_ROOTS', ''))
+      raise ArgumentError, 'Shuttlebay.offloaded?(:static, dir) needs the directory' if dir.nil?
+
+      roots.split("\n").include?(File.realpath(dir))
+    rescue SystemCallError
+      false
+    end
+
     def clear_hooks!
       HOOKS.each { |name| hooks[name].clear }
       @fiber_scheduler_factory = @fiber_reactors = nil

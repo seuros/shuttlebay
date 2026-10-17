@@ -57,9 +57,59 @@ bundle exec mothership
 | Real client IP | `RemoteIp` + proxy config | `REMOTE_ADDR` resolved (Forwarded / PROXY protocol) |
 | Load balancing to workers | kernel accept / `wait_for_less_busy_worker` | idle-thread checkout; queueing in Mothership |
 | Request body buffering | App server | Mothership reads the whole body before claiming a thread |
+| `ETag` / `If-None-Match` → 304 | `Rack::ETag`, `Rack::ConditionalGet` | Mothership hashes complete bodies and answers 304 |
+| IP allowlists, rate limits | `Rack::Attack` | `ip_allowlist`, `rate_limits`, `trusted_proxies` in the manifest |
+| Page / API caching | CDN, `Rack::Cache` | `[mothership.response_cache]`, purged by tag |
 
-When Rails is loaded, the bundled Railtie removes `Rack::Sendfile`, since the
-engine offloads `to_path` bodies itself.
+When Rails is loaded, the bundled Railtie removes the middleware Mothership
+makes redundant:
+
+- `Rack::Sendfile`: the engine offloads `to_path` bodies itself.
+- `ActionDispatch::Static`: when Mothership serves the app's `public/` as a
+  static dir (`MS_STATIC_ROOTS`). `config.public_file_server.headers` it
+  does not send (per `MS_STATIC_HEADERS`) are logged at boot: move them to
+  the static dir's `headers` in the manifest.
+- `Rack::ETag` and `Rack::ConditionalGet`: when Mothership validates
+  conditionals (`MS_CONDITIONAL_GET=1`), so bodies are not hashed twice.
+
+Other Rack apps (Sinatra, Roda, Hanami) ask the same in `config.ru`;
+`Shuttlebay.offloaded?` is false under any other server:
+
+```ruby
+use Rack::ETag unless Shuttlebay.offloaded?(:conditional_get)
+use Rack::ConditionalGet unless Shuttlebay.offloaded?(:conditional_get)
+use Rack::Static, urls: [""], root: "public", cascade: true unless Shuttlebay.offloaded?(:static, "public")
+use Rack::Sendfile unless Shuttlebay.offloaded?(:sendfile)
+run App
+```
+
+Rate limiting and allowlists in `Rack::Attack` are app configuration: drop
+them yourself once the manifest enforces the same rules.
+
+## Caching at the edge
+
+Mothership's response cache keeps entries until their data changes when the
+app tags responses with what they show and purges the tags on change:
+
+```ruby
+class BooksController < ApplicationController
+  def show
+    @book = Book.find(params[:id])
+    Shuttlebay::Cache.tag(response.headers, "book-#{@book.id}", "books")
+    expires_in 1.hour, public: true   # or a manifest rule
+  end
+end
+
+class Book < ApplicationRecord
+  after_commit { Shuttlebay::Cache.purge(tags: ["book-#{id}", "books"]) }
+end
+```
+
+`purge` also takes `urls:` (path and query), `prefixes:`, `all: true`, and
+`soft: true` (mark stale and revalidate instead of dropping). It posts to
+`MS_ADMIN_URL`, returns the number purged, is a no-op returning `nil` where
+there is no Mothership, and raises `Shuttlebay::Error` when Mothership refuses
+(e.g. no cache configured) or a network error when it is unreachable.
 
 ## Hooks
 
@@ -163,7 +213,11 @@ For HTTPS, run Mothership with a `tls` bind and the app as a docking upstream
 
 ## Environment (set by Mothership)
 
-`MS_SOCKET_PATH`, `MS_SHIP`, `MS_BAY_WORKERS`, `MS_BAY_THREADS`, `MS_BAY_DRAIN_TIMEOUT`.
+`MS_SOCKET_PATH`, `MS_SHIP`, `MS_BAY_WORKERS`, `MS_BAY_THREADS`, `MS_BAY_DRAIN_TIMEOUT`,
+`MS_STATIC_ROOTS` (directories Mothership serves at `/`, one per line),
+`MS_STATIC_HEADERS` (the headers their files carry, JSON by path),
+`MS_CONDITIONAL_GET=1` (Mothership answers conditionals),
+`MS_ADMIN_URL` (admin endpoint for cache purges).
 
 ## Development
 
