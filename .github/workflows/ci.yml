@@ -18,7 +18,7 @@ jobs:
         with:
           path: shuttlebay
 
-      - uses: seuros/dictator-setup@v1
+      - uses: seuros/setup-dictator@master
 
       - name: dictator
         working-directory: shuttlebay
