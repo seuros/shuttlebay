@@ -51,12 +51,14 @@ namespace :gems do
        '--pattern', "shuttlebay-#{version}*.gem", '--dir', 'pkg', '--clobber'
   end
 
-  desc 'Fetch a release\'s gems, then push each to rubygems.org'
+  desc 'Fetch a release\'s gems, then push each to rubygems.org (GEM_OTP: one code for all)'
   task :push, [:tag] => :fetch do |_task, args|
     gems = Dir["pkg/shuttlebay-#{release_version.call(args[:tag])}*.gem"]
     abort 'no gems in pkg/ for this release' if gems.empty?
 
-    failed = gems.reject { |gem| system('gem', 'push', gem) }
+    otp = ENV.fetch('GEM_OTP', '')
+    otp = otp.empty? ? [] : ['--otp', otp]
+    failed = gems.reject { |gem| system('gem', 'push', gem, *otp) }
     abort "not pushed: #{failed.join(', ')}" if failed.any?
   end
 end
