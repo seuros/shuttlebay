@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/seuros/shuttlebay/compare/v0.2.0...v0.2.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **deps:** build against state-machines 0.35 ([8ae2ca4](https://github.com/seuros/shuttlebay/commit/8ae2ca4a87bffbf97f76643860f641ee730e48a0))
+
 ## [0.2.0](https://github.com/seuros/shuttlebay/compare/v0.1.4...v0.2.0) (2026-10-17)
 
 
