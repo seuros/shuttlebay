@@ -80,6 +80,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
+name = "harel-machines"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c55c0689200ba712a0c4360a54ec8bac72ba928bc3229e558b1ebb1ea01a49d7"
+
+[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -319,7 +325,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "shuttlebay"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "magnus",
  "mothership-docking-protocol",
@@ -330,9 +336,9 @@ dependencies = [
 
 [[package]]
 name = "state-machines"
-version = "0.32.1"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9b6f45e43f20a6eba0d7c03779b53775e0d9b40a452b89e55ea7aae87fa7a14"
+checksum = "f2fb3f0428a4a79e7929cacf1186fea42291446987807a5136daae4161c13fcf"
 dependencies = [
  "state-machines-core",
  "state-machines-macro",
@@ -340,16 +346,17 @@ dependencies = [
 
 [[package]]
 name = "state-machines-core"
-version = "0.13.1"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7a38d0afcf79a49438b4342ea90beec6490664a0725b2932f6e816d83bc46fe"
+checksum = "1d027fb20a763004675f678951c6c9537d9dbc2b26056c37d41cefb014e55daf"
 
 [[package]]
 name = "state-machines-macro"
-version = "0.32.1"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "604a644fc18fffd8845eb7f48e332d79a24750ac9d463a39d9b3cb10c44fcc28"
+checksum = "c16c56f4525fd7923580b96d7066341d3b10e772aa2e679e0c65b04881ba9439"
 dependencies = [
+ "harel-machines",
  "proc-macro2",
  "quote",
  "syn 3.0.9",
